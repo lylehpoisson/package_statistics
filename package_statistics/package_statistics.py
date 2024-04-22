@@ -54,8 +54,8 @@ def setup_logging(level=logging.WARNING) -> None:
 
 def fetch_contents_file(architecture) -> requests.Response:
     """Fetch and return the Contents file from the Debian repository for the provided architecture."""
-    url = f'http://ftp.uk.debian.org/debian/dists/stable/main/Contents-{
-        architecture}.gz'
+    url = (f'http://ftp.uk.debian.org/debian/dists/stable/main/'
+           f'Contents-{architecture}.gz')
     try:
         # This line retrieves the contents file. We set stream=True to help
         # parse large files.
@@ -63,27 +63,49 @@ def fetch_contents_file(architecture) -> requests.Response:
         # Check for HTTP errors.
         response.raise_for_status()
         return response
+    # We explicitly handle three different types of errors here
     except requests.exceptions.HTTPError as e:
-        # We explicitly handle three different types of errors here
+        logger.error('HTTP error occurred while fetching %s: %s', url, e)
         if e.response.status_code == 404:
             # This error raises if the file doesn't exist on the website
-            logger.error('Contents file not found at the server: %s', e)
             raise FileNotFoundError(
-                'The requested file is missing on the server.') from None
+                'The requested file is missing on the server: ' +
+                url) from None
         # This handles any other type of HTTP error
-        logger.error('HTTP error occurred: %s', e)
         raise SystemError(
-            'An HTTP error occurred while trying to fetch data.') from None
+            'An HTTP error occurred while trying to fetch data from: ' +
+            url) from None
     # This handles any network errors, such as the user's
     # computer not being connected to WiFi
     except requests.exceptions.RequestException as e:
-        logger.error('Network error occurred: %s', e)
-        raise ConnectionError('Failed to connect to the server.' +
-                              'Check your internet connection.') from None
+        logger.error('Network error occurred while fetching %s: %s', url, e)
+        raise ConnectionError(
+            'Failed to connect to the server. Check your internet connection. URL: ' +
+            url) from None
 
 
-def parse_contents_file(contents_file) -> defaultdict:
-    """Parse the contents file and create a dictionary that ."""
+def parse_contents_file(response) -> defaultdict:
+    """
+    Parse the contents file and create a dictionary
+    mapping package names to the count of associated files.
+
+    This function reads the gzip-compressed contents directly from the 'raw' attribute
+    of the response object, which is expected to be an instance of `requests.models.Response`.
+    Each line in the Contents file should list a file path followed by a space and the associated
+    package names, separated by commas. The function counts occurrences of each package name.
+
+    Parameters:
+    - response (requests.Response): The response object containing the stream of the gzip-compressed
+      Contents file. It is expected that the response is obtained with `stream=True` to handle
+      large files efficiently.
+
+    Returns:
+    - defaultdict(int): A dictionary where keys are package names and values are the counts of files
+      associated with each package
+
+    Note:
+    - Lines that do not conform to the expected format are logged as warnings and skipped in the counting.
+      """
     # We use a defaultdict object, which defines default behavior
     # for any new key added to the dictionary.
     # In this case, if we tell the dictionary to increment the value of
@@ -91,13 +113,16 @@ def parse_contents_file(contents_file) -> defaultdict:
     # and a value of 0 (since we specified int), and increments the value
     # from 0 to 1.
     leaderboard = defaultdict(int)
-    with gzip.GzipFile(fileobj=contents_file) as gz:
+    with gzip.GzipFile(fileobj=response.raw, mode='rb') as gz:
         for line_bytes in io.BufferedReader(gz):
             # We split the line on whitespace and take just the final value.
             # This is the list of packages associated with the file.
             # We further split this string on commas, for the cases
             # where there is more than one package.
-            split_line = line_bytes.decode('utf-8').strip().split()
+            try:
+                split_line = line_bytes.decode('utf-8').strip().split()
+            except UnicodeDecodeError as e:
+                logger.error('Failed to decode line, skipping. Error: %s', e)
             # Check if line matches expected format. This handles
             # any lines that are missing spaces.
             # Known bug: does not handle lines where there is a space
@@ -130,9 +155,9 @@ def display_leaderboard(leaderboard, top_n=10) -> None:
     # highest values in our defaultdict. We make a dictionary out of those
     # keys and their values, then print an ordered list in the
     # required format
-    top_packages = dict(Counter(leaderboard).most_common(top_n))
-    for index, (package, num_assoc_files) in enumerate(
-            list(top_packages.items())):
+    top_packages = Counter(leaderboard).most_common(top_n)
+    for index, (package, num_assoc_files) in enumerate(top_packages):
+        # Format the output into columns
         # The ':<5' and ':<50' are used for aligning the result
         # into columns. If we just used spaces, the line lengths
         # would vary depending on the package name and the index
@@ -168,14 +193,9 @@ def package_statistics(architecture, top_n) -> None:
     # First get the Contents file from the Debian repo
     response = fetch_contents_file(architecture)
 
-    # Convert the raw binary content of the response into a BytesIO object.
-    # This allows the gzip module to treat it like a file,
-    # without writing it to disk.
-    contents_file = io.BytesIO(response.content)
-
     # Now we create a leaderboard with all packages and their associated
     # number of files.
-    leaderboard = parse_contents_file(contents_file)
+    leaderboard = parse_contents_file(response)
 
     # Finally, we display the top n packages with the most associated files.
     # The default performance is to display the top 10.
