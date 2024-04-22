@@ -2,7 +2,6 @@ from collections import defaultdict
 import gzip
 import io
 
-import click
 from click.testing import CliRunner
 import pytest
 from requests.exceptions import HTTPError, Timeout
@@ -31,11 +30,11 @@ def test_fetch_contents_file_success(mocker):
     mock_response = mocker.Mock()
     mock_response.raise_for_status = mocker.Mock()
     sample_data = generate_sample_gz_data()
-    mock_response.content = sample_data.getvalue()
+    mock_response.raw = sample_data
     mocker.patch(BASE_PATCH_PATH + 'requests.get', return_value=mock_response)
 
     response = package_statistics.fetch_contents_file('amd64')
-    assert response.content == sample_data.getvalue()
+    assert response.raw == sample_data
 
 
 def test_fetch_contents_file_404(mocker):
@@ -64,18 +63,35 @@ def test_parse_contents_file_empty(mocker):
     with gzip.GzipFile(fileobj=empty_gz_data, mode='wb') as gz:
         gz.write(b"")
     empty_gz_data.seek(0)
-    result = package_statistics.parse_contents_file(empty_gz_data)
-    assert result == defaultdict(int)
+    mock_response = mocker.Mock()
+    mock_response.raw = empty_gz_data
+    mocker.patch('gzip.GzipFile',
+                 return_value=gzip.GzipFile(fileobj=empty_gz_data, mode='rb'))
+    result = package_statistics.parse_contents_file(mock_response)
+    assert result == defaultdict(
+        int), f"Expected empty defaultdict, got {result}"
+    assert empty_gz_data.tell() == empty_gz_data.getbuffer(
+    ).nbytes, "Stream should be at the end"
+    assert not empty_gz_data.read(
+    ), "No more data should be available in the stream"
 
 
 def test_parse_contents_file_bad_data(mocker):
     """Test parsing a gzip file with malformed content"""
-    bad_data = io.BytesIO()
-    with gzip.GzipFile(fileobj=bad_data, mode='wb') as gz:
+    bad_gz_data = io.BytesIO()
+    with gzip.GzipFile(fileobj=bad_gz_data, mode='wb') as gz:
         gz.write(b"path/to/filepkg1/name,pkg2/name")
-    bad_data.seek(0)
-    result = package_statistics.parse_contents_file(bad_data)
+    bad_gz_data.seek(0)
+    mock_response = mocker.Mock()
+    mock_response.raw = bad_gz_data
+    mocker.patch('gzip.GzipFile',
+                 return_value=gzip.GzipFile(fileobj=bad_gz_data, mode='rb'))
+    result = package_statistics.parse_contents_file(mock_response)
     assert result == defaultdict(int)
+    assert bad_gz_data.tell() == bad_gz_data.getbuffer(
+    ).nbytes, "Stream should be at the end"
+    assert not bad_gz_data.read(
+    ), "No more data should be available in the stream"
 
 
 def test_display_leaderboard_less_than_top_n(capsys):
@@ -111,7 +127,7 @@ def test_package_statistics_integration(mocker, capsys):
     gzipped_content = generate_sample_gz_data()
     # Set up the the mock response to return the gzipped content as bytes
     mock_response = mocker.Mock()
-    mock_response.content = gzipped_content.getvalue()
+    mock_response.raw = gzipped_content
     mocker.patch(BASE_PATCH_PATH + 'requests.get', return_value=mock_response)
 
     # Mock the parsing function to return pre-defined results
@@ -121,7 +137,7 @@ def test_package_statistics_integration(mocker, capsys):
                      'small_pkg': 5
                  }))
 
-    # This is necessary to test for this function,
+    # Using this CliRunner object is necessary to test for this function,
     # because click expects CLI arguments to be handled
     # in a way that is different than just passing the arguments to a function.
     runner = CliRunner()
