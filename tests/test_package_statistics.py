@@ -1,3 +1,25 @@
+"""
+This test module covers various functionalities of the package_statistics module, ensuring
+that all components behave as expected under various scenarios. It includes unit tests for
+handling HTTP errors, timeouts, and parsing data from the Debian Contents file in a simulated
+gzip format. Additionally, the module tests higher-level functionalities like parsing logic
+and the display of statistics in a leaderboard format.
+
+Tests are structured to cover:
+- Successful fetch of gzipped content data.
+- Handling of HTTP 404 and timeout errors during fetch operations.
+- Parsing of both empty and malformed gzip files.
+- Display logic of the leaderboard with various numbers of items.
+- An integration test that simulates the entire flow from fetching
+  the gzip data to displaying the leaderboard.
+
+Each test function within this module uses mocking to isolate functionality and ensure
+reliability without the need for actual web requests or file operations.
+
+The test suite employs pytest fixtures for common setup and tear-down operations,
+and the mocker patch from the pytest-mock plugin to mock external dependencies
+and methods within the module being tested.
+"""
 from collections import defaultdict
 import gzip
 import io
@@ -137,7 +159,7 @@ def test_package_statistics_integration(mocker, capsys):
                      'small_pkg': 5
                  }))
 
-    # Using this CliRunner object is necessary to test for this function,
+    # Use this CliRunner object is necessary to test for this function,
     # because click expects CLI arguments to be handled
     # in a way that is different than just passing the arguments to a function.
     runner = CliRunner()
