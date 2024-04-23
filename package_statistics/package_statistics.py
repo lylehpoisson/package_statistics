@@ -2,16 +2,15 @@
 This module provides functionality to fetch and analyze the file distribution of Debian packages
 across different architectures.
 
-It uses the Debian repository to obtain the Contents file for a specified architecture and processes
-this file to display the ten packages with the most associated files. It supports multiple
-architectures and includes robust error handling and logging for diagnosing issues related
-to network errors or data processing. User can also specify a value different than ten for
-the number of top packages displayed.
+It accesses a Debian mirror to obtain the Contents file for a specified architecture and processes
+this file to display the ten packages (or optionally, a user-specified number of packages)
+with the most associated files. It supports multiple architectures and includes robust error
+handling and logging for diagnosing issues related to network errors or data processing.
 
 Features:
-- Fetch Contents files for architectures like amd64, arm64, etc., from the Debian repository.
+- Fetch Contents files for architectures like amd64, arm64, etc., from the Debian mirror.
 - Analyze and count file associations per package.
-- Display the top ten (or other user=specified number) packages with the most associated files.
+- Display the top ten (or optionally user-specified number) packages with the most associated files.
 - Extensive error handling including logging for various potential failures
   such as network issues or missing data.
 
@@ -53,7 +52,15 @@ def setup_logging(level=logging.WARNING) -> None:
 
 
 def fetch_contents_file(architecture) -> requests.Response:
-    """Fetch and return the Contents file from the Debian repository for the provided architecture."""
+    """
+    Fetch and return the Contents file from the Debian mirror for the provided architecture.
+
+    This function retrieves the gzip-compressed Contents file for the given architecture
+    from the stable main directory of the ftp.uk.debian.org mirror. It handles several
+    types of errors, including HTTP errors and general network issues.
+
+    Returns a requests.Response object with streaming enabled.
+    """
     url = (f'http://ftp.uk.debian.org/debian/dists/stable/main/'
            f'Contents-{architecture}.gz')
     try:
@@ -122,7 +129,8 @@ def parse_contents_file(response) -> defaultdict:
             try:
                 split_line = line_bytes.decode('utf-8').strip().split()
             except UnicodeDecodeError as e:
-                logger.error('Failed to decode line, skipping. Error: %s', e)
+                logger.warning(
+                    'Skipping line due to decode error. Error: %s', e)
             # Check if line matches expected format. This handles
             # any lines that are missing spaces.
             # Known bug: does not handle lines where there is a space
@@ -141,20 +149,19 @@ def parse_contents_file(response) -> defaultdict:
             packages_from_line = split_line[-1].split(',')
             for package in packages_from_line:
                 # This is where that defaultdict behavior
-                # is used. If there is no key called package
-                # in the dictionary, one is created and given
-                # a value of 0. Then it is immediately incremented
-                # by the `+= 1``
+                # is used. If the package name is not a key
+                # in the dictionary, a key with that name is
+                # created and given a value of 0. Then it is
+                # immediately incremented by the `+= 1`
                 leaderboard[package] += 1
     return leaderboard
 
 
 def display_leaderboard(leaderboard, top_n=10) -> None:
-    """Display the top NUMBER packages with the most associated files."""
-    # Here we use the Counter object to identify the keys with the
-    # highest values in our defaultdict. We make a dictionary out of those
-    # keys and their values, then print an ordered list in the
-    # required format
+    """Display the top TOP_N packages with the most associated files."""
+    # Here we create a Counter object containing the items with the
+    # highest values in our defaultdict. We then print a formatted
+    # string listing the results
     top_packages = Counter(leaderboard).most_common(top_n)
     for index, (package, num_assoc_files) in enumerate(top_packages):
         # Format the output into columns
@@ -190,7 +197,7 @@ def package_statistics(architecture, top_n) -> None:
     # Including this allows the user to specify a different logging level
     setup_logging()
     logger.info('Application started')
-    # First get the Contents file from the Debian repo
+    # First get the Contents file from the Debian mirror
     response = fetch_contents_file(architecture)
 
     # Now we create a leaderboard with all packages and their associated
