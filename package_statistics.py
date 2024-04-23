@@ -1,9 +1,12 @@
-"""This is a helper file to avoid having to write
+"""This is a helper file to simplify command line usage.
 
-python -m package_statistics/packagestatistics.py
+With this file, the user can write
 
-Check the README.md for more information.
+python -m package_statistics.py
 
+instead of
+
+python -m package_statistics/package_statistics.py
 """
 
 from package_statistics.package_statistics import package_statistics
