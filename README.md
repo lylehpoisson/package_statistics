@@ -95,8 +95,3 @@ One challenge was dealing with the incoming data's type. It is a gzip file, so I
 I originally wrote the script using `argparse` instead of `click`. While debugging, I ran into a reference to `click` on stackexchange. I've never used it before, but I decided to switch to using it over argparse because of the improvements to readability and flexibility. For example, it simplified restricting the `architecture` argument to only the allowed values.
 
 I also wrote the code originally with all of the functionality in one main function. This helped me keep my work concise and centered while I was still figuring out my approach. Once I had solidified my choice of approach, I made the code more modular, added error handling, and wrote a test suite.
-
-
-
-## Time taken
-I spent around 8-9 hours on this project. 
